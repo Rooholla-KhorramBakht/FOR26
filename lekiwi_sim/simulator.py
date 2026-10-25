@@ -110,6 +110,12 @@ KEY_HEIGHT = 0.012        # height of a key cap (m)
 KEY_TRAVEL = 0.006        # how far a key can be pushed down (m)
 KEY_PRESSED_AT = 0.003    # a key counts as pressed when it is this far down (m)
 
+# The ArUco scene: printed markers standing in the room, read from a marker map file (see
+# Assignment4). Each marker is drawn on a white card that leaves a white border around it, like paper.
+ARUCO_CARD_MARGIN = 0.25   # white border on each side, as a fraction of the marker's edge length
+ARUCO_CARD_THICKNESS = 0.004
+ARUCO_MARKER_PIXELS = 192   # size of the marker itself in its picture: 6 cells of 32 pixels for a 4x4 marker
+
 # Collision bits. The reference model switches collisions off for almost every robot part and
 # uses bit 1 for wheels/floor and bit 2 for a few spheres that keep the arm above the floor.
 # We add bit 4 for the two gripper jaws so that they can touch cubes and platforms.
@@ -149,6 +155,46 @@ def _make_renderer(model, width, height):
     return mujoco.Renderer(model, height, width)
 
 
+def _add_aruco_markers(spec, marker_map):
+    """Add one white card with a printed ArUco marker on it for each marker of a marker map."""
+    import cv2   # only this scene needs OpenCV
+
+    from scipy.spatial.transform import Rotation
+
+    dictionary = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, marker_map.get("dictionary", "DICT_4X4_50")))
+    size = float(marker_map["marker_size"])
+    border = round(ARUCO_MARKER_PIXELS * ARUCO_CARD_MARGIN)   # white border in the picture, in pixels
+    pixels = ARUCO_MARKER_PIXELS + 2 * border
+    card = size * pixels / ARUCO_MARKER_PIXELS
+    world = spec.worldbody
+    # A light grey sky instead of black, and enough light that the white cards look white.
+    spec.add_texture(name="aruco_sky", type=mujoco.mjtTexture.mjTEXTURE_SKYBOX, builtin=mujoco.mjtBuiltin.mjBUILTIN_GRADIENT,
+                     rgb1=[0.85, 0.85, 0.85], rgb2=[0.6, 0.6, 0.6], width=64, height=64)
+    spec.visual.headlight.ambient = [0.5, 0.5, 0.5]
+    spec.visual.headlight.diffuse = [0.5, 0.5, 0.5]
+    for marker in marker_map["markers"]:
+        marker_id = int(marker["id"])
+        # The picture: the marker with its white border, as the card's whole front face.
+        picture = np.full((pixels, pixels), 255, np.uint8)
+        picture[border:border + ARUCO_MARKER_PIXELS, border:border + ARUCO_MARKER_PIXELS] = \
+            cv2.aruco.generateImageMarker(dictionary, marker_id, ARUCO_MARKER_PIXELS)
+        rgb = np.repeat(picture[:, :, None], 3, axis=2)
+        texture = spec.add_texture(name=f"aruco_{marker_id}_texture", type=mujoco.mjtTexture.mjTEXTURE_2D,
+                                   width=pixels, height=pixels, nchannel=3)
+        texture.data = rgb.tobytes()
+        material = spec.add_material(name=f"aruco_{marker_id}_material")
+        material.textures[mujoco.mjtTextureRole.mjTEXROLE_RGB] = texture.name
+        # The card is a thin box. Its own frame is the marker's frame: x right, y up, z out of the
+        # printed side. Its centre sits half a thickness behind the printed surface.
+        rotation = Rotation.from_quat(marker["orientation"])
+        normal = rotation.as_matrix()[:, 2]
+        qx, qy, qz, qw = rotation.as_quat()
+        world.add_geom(name=f"aruco_{marker_id}", type=mujoco.mjtGeom.mjGEOM_BOX,
+                       pos=np.asarray(marker["position"], float) - normal * ARUCO_CARD_THICKNESS / 2,
+                       quat=[qw, qx, qy, qz], size=[card / 2, card / 2, ARUCO_CARD_THICKNESS / 2],
+                       material=material.name, contype=0, conaffinity=0)
+
+
 class LeKiwiSim:
     """MuJoCo simulation of LeKiwi with a few cubes and platforms.
 
@@ -158,13 +204,19 @@ class LeKiwiSim:
         scene: what to put around the robot. "cubes" (a table with three cubes and two shelves),
             "keyboard" (a plate with three keys to press) or "empty" (only the floor).
         add_scene: older way to ask for an empty scene; add_scene=False is the same as scene="empty".
+        aruco_markers: for scene="aruco": the markers to put in the room, as a dictionary with the
+            layout of a marker map file: {"dictionary": "DICT_4X4_50", "marker_size": 0.15,
+            "markers": [{"id": 1, "position": [x, y, z], "orientation": [qx, qy, qz, qw]}, ...]}.
+            A marker's frame has x to the right, y up and z out of the printed side.
     """
 
-    def __init__(self, control_dt=0.02, model_path=None, add_scene=True, scene="cubes"):
+    def __init__(self, control_dt=0.02, model_path=None, add_scene=True, scene="cubes", aruco_markers=None):
         if not add_scene:
             scene = "empty"
-        if scene not in ("cubes", "keyboard", "empty"):
-            raise ValueError(f'scene must be "cubes", "keyboard" or "empty", got {scene!r}')
+        if scene not in ("cubes", "keyboard", "empty", "aruco"):
+            raise ValueError(f'scene must be "cubes", "keyboard", "empty" or "aruco", got {scene!r}')
+        if scene == "aruco" and not aruco_markers:
+            raise ValueError('scene="aruco" needs aruco_markers (the contents of a marker map file)')
         self.scene = scene
         model_path = Path(model_path) if model_path else DEFAULT_MODEL
         if not model_path.exists():
@@ -172,7 +224,7 @@ class LeKiwiSim:
                 f"Robot model not found at {model_path}. "
                 "In the repository folder run: git submodule update --init"
             )
-        self.model = self._build_model(model_path, scene)
+        self.model = self._build_model(model_path, scene, aruco_markers)
         self.data = mujoco.MjData(self.model)
         self.control_dt = control_dt
         self._substeps = max(1, round(control_dt / self.model.opt.timestep))
@@ -180,6 +232,7 @@ class LeKiwiSim:
         m = self.model
         name2id = mujoco.mj_name2id
         self._base_body = name2id(m, mujoco.mjtObj.mjOBJ_BODY, MODEL_BASE_BODY)
+        self._base_qpos = m.jnt_qposadr[name2id(m, mujoco.mjtObj.mjOBJ_JOINT, "base_free")]
         self._gripper_site = name2id(m, mujoco.mjtObj.mjOBJ_SITE, "gripper")
         self._fingertip_site = name2id(m, mujoco.mjtObj.mjOBJ_SITE, "fingertip")
         self._key_qpos = {n: m.jnt_qposadr[name2id(m, mujoco.mjtObj.mjOBJ_JOINT, n + "_slide")]
@@ -209,7 +262,7 @@ class LeKiwiSim:
     # -----------------------------------------------------------------------------------------
 
     @staticmethod
-    def _build_model(model_path, scene):
+    def _build_model(model_path, scene, aruco_markers=None):
         """Load the robot MJCF and add our own parts to it in memory (the file is not changed)."""
         spec = mujoco.MjSpec.from_file(str(model_path))
         box = mujoco.mjtGeom.mjGEOM_BOX
@@ -309,6 +362,11 @@ class LeKiwiSim:
                 geom.solimp = GRASP_SOLIMP
         else:
             block.pos = [0.0, 3.5, 0.025]  # park the built-in block far away from the robot
+        if scene == "aruco":
+            # No block in this scene. (Parking it far away would also work, but the camera's near
+            # clipping distance grows with the size of the scene, so nearby things would vanish.)
+            spec.delete(block)
+            _add_aruco_markers(spec, aruco_markers)
 
         # Cameras. The reference model's own camera ("front_camera") points into the robot, so we
         # add our own: two on the robot (front of the base, and on the gripper) and two fixed ones.
@@ -388,6 +446,24 @@ class LeKiwiSim:
         self.data.ctrl[self._arm_ctrl] = start
         mujoco.mj_forward(self.model, self.data)
         self._wall_start = None
+        if self._viewer is not None:
+            self._viewer.sync()
+
+    def set_base_pose(self, x, y, heading):
+        """Put the robot at (x, y) metres in the world, facing `heading` degrees (0 = along +x), at rest.
+
+        Call it right after creating the simulator or after reset(), before stepping.
+        """
+        adr = self._base_qpos
+        start_quat = self.model.qpos0[adr + 3:adr + 7]   # the base's orientation at heading 0
+        turn = np.array([math.cos(math.radians(heading) / 2), 0.0, 0.0, math.sin(math.radians(heading) / 2)])
+        quat = np.zeros(4)
+        mujoco.mju_mulQuat(quat, turn, start_quat)
+        self.data.qpos[adr:adr + 3] = [x, y, self.model.qpos0[adr + 2]]
+        self.data.qpos[adr + 3:adr + 7] = quat
+        self.data.qvel[self.model.jnt_dofadr[mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "base_free")]
+                       + np.arange(6)] = 0.0
+        mujoco.mj_forward(self.model, self.data)
         if self._viewer is not None:
             self._viewer.sync()
 

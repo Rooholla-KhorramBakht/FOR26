@@ -1,0 +1,49 @@
+dictionary: DICT_4X4_50
+marker_size: 0.2065
+frame: map
+notes: 'A made-up room for the simulator: 6 m x 5 m, the map origin in its middle,
+  ten markers on the walls at 25 cm height, all facing into the room. position: marker
+  centre in metres. orientation: quaternion [x, y, z, w] of the marker frame (x right,
+  y up, z out of the marker). yaw_deg: the direction the marker faces, from the map
+  x axis.'
+markers:
+- id: 10
+  position: [3.0, -1.2, 0.25]
+  orientation: [-0.5, 0.5, 0.5, -0.5]
+  yaw_deg: 180.0
+- id: 11
+  position: [3.0, 0.9, 0.25]
+  orientation: [-0.5, 0.5, 0.5, -0.5]
+  yaw_deg: 180.0
+- id: 12
+  position: [1.5, 2.5, 0.25]
+  orientation: [0.70711, 0.0, 0.0, 0.70711]
+  yaw_deg: -90.0
+- id: 13
+  position: [-0.8, 2.5, 0.25]
+  orientation: [0.70711, 0.0, 0.0, 0.70711]
+  yaw_deg: -90.0
+- id: 14
+  position: [-3.0, 1.4, 0.25]
+  orientation: [0.5, 0.5, 0.5, 0.5]
+  yaw_deg: 0.0
+- id: 15
+  position: [-3.0, -0.6, 0.25]
+  orientation: [0.5, 0.5, 0.5, 0.5]
+  yaw_deg: 0.0
+- id: 16
+  position: [-1.9, -2.5, 0.25]
+  orientation: [0.0, 0.70711, 0.70711, 0.0]
+  yaw_deg: 90.0
+- id: 17
+  position: [0.4, -2.5, 0.25]
+  orientation: [0.0, 0.70711, 0.70711, 0.0]
+  yaw_deg: 90.0
+- id: 18
+  position: [2.2, -2.5, 0.25]
+  orientation: [0.0, 0.70711, 0.70711, 0.0]
+  yaw_deg: 90.0
+- id: 19
+  position: [-2.4, 2.5, 0.25]
+  orientation: [0.70711, 0.0, 0.0, 0.70711]
+  yaw_deg: -90.0

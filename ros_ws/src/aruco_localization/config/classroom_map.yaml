@@ -1,0 +1,35 @@
+dictionary: DICT_4X4_50
+marker_size: 0.2065
+frame: map
+notes: 'position: marker centre in metres. orientation: quaternion [x, y, z, w] of
+  the marker frame (x right, y up, z out of the marker). yaw_deg: the direction the
+  marker faces, from the map x axis.'
+markers:
+- id: 1
+  position: [1.6178, 1.467, 0.2386]
+  orientation: [0.01225, -0.707, 0.7071, 0.00271]
+  yaw_deg: -89.23
+- id: 2
+  position: [0.0, 0.0, 0.2386]
+  orientation: [0.50382, 0.49615, 0.50382, 0.49615]
+  yaw_deg: -0.0
+- id: 4
+  position: [1.0717, -1.7707, 0.2386]
+  orientation: [-0.70654, 0.02829, -0.02482, 0.70667]
+  yaw_deg: 85.7
+- id: 7
+  position: [3.0086, 0.2516, 0.2386]
+  orientation: [0.04518, -0.70566, 0.70707, 0.00728]
+  yaw_deg: -86.93
+- id: 8
+  position: [7.8561, -3.8504, 0.2386]
+  orientation: [-0.49807, 0.50193, 0.49811, -0.50188]
+  yaw_deg: 179.99
+built_from:
+  videos: [roommap.mp4, roomap2.mp4]
+  origin_marker: 2
+  origin_height: 0.26
+  flatten: true
+  same_height: true
+  median_corner_error_px: 0.569
+  unplaced_markers: []
